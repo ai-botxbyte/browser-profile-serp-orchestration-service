@@ -87,7 +87,7 @@ class BaseAppConfig(BaseSettings):
         """Check if running in development environment."""
         return str(self.ENV).lower() in ["development", "dev"]
 
-
+# [] lru cache and this function is not in orchestration service.
 @lru_cache
 def get_base_config() -> BaseAppConfig:
     """Get cached base configuration instance."""

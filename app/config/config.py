@@ -22,10 +22,12 @@ class Config(BaseAppConfig):
     # Additional fields, if any, can be added similarly
     STATUS: str = Field(default="active", env="STATUS")  # Example additional field
 
+# [] Same for this function
 @lru_cache
 def get_config() -> Config:
     """Get the configuration instance."""
     return Config()
 
+# [] We never ever make object on last line. 
 config = get_config()
     

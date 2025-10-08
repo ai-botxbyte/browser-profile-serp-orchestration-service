@@ -43,7 +43,7 @@ def get_db() -> Iterator:
     finally:
         db.close()
 
-
+# [] I am confused about this function - is it required? May be - Yes.
 async def get_async_db() -> Generator:
     """Yield an AsyncSession for use in async endpoints/dependencies.
     

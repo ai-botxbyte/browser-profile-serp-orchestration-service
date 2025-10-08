@@ -1,4 +1,6 @@
 from typing import Optional
+# [] HTTPException = Exception and we need make some changes to it right? 
+# What about : BaseConsumerException as a file name?
 from fastapi import HTTPException, status
 
 

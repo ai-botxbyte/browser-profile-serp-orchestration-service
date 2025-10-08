@@ -34,6 +34,7 @@ class BaseAppConsumer(ABC):
             self.channel = await self.connection.channel()
             await self.channel.set_qos(prefetch_count=1)
             
+            # [] We never ever declare queue while consuming - it's producing time works.
             # Declare main queue with priority support
             self.queue = await self.channel.declare_queue(
                 self.queue_name,
@@ -43,7 +44,8 @@ class BaseAppConsumer(ABC):
                     "x-max-priority": 10  # Support priority levels 0-10
                 }
             )
-            
+
+            # [] We never ever declare queue while consuming - it's producing time works.
             # Declare dead letter queue for permanent storage (no consumer needed)
             await self.channel.declare_queue(
                 f"{self.queue_name}_dead_letter",

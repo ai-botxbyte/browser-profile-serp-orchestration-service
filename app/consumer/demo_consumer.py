@@ -97,6 +97,7 @@ class DemoConsumer(BaseAppConsumer):
                 
             # Consumer continues running - no exceptions raised!
     
+    # [] Shall we ignore this function? or is it possible at the schema level end? 
     def _validate_message(self, message_data: dict) -> DemoOrchestrationMessageSchema:
         """
         Validate log message using DemoOrchestrationMessageSchema with built-in business rules
