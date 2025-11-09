@@ -22,8 +22,6 @@ class Config(BaseAppConfig):
     # Additional fields, if any, can be added similarly
     STATUS: str = Field(default="active", env="STATUS")  # Example additional field
 
-# [ ] Same for this function
-# [x] I found this "Using lru_cache on a config factory is common and appropriate for FastAPI/
 # orchestration services: it returns a single cached BaseAppConfig per process, avoids re-parsing
 # env files on each call, and is cheap and safe."
 @lru_cache

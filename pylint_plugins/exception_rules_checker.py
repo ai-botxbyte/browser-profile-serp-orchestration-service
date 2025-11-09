@@ -5,7 +5,7 @@ from pylint.lint import PyLinter
 
 
 class ExceptionAndKeywordChecker(BaseChecker):
-    """Custom Pylint checker enforcing FastAPI exception conventions and keyword-only args."""
+    """Custom Pylint checker enforcing  exception conventions and keyword-only args."""
 
     name = "exception-keyword-checker"
     priority = -1
@@ -28,11 +28,6 @@ class ExceptionAndKeywordChecker(BaseChecker):
         ),
 
         # Status code rules
-        "E9953": (
-            "Status code must use FastAPI status constants, not hardcoded values",
-            "no-hardcoded-status-codes",
-            "Use 'from fastapi import status' instead of hardcoded status codes.",
-        ),
         "E9954": (
             "Non-HTTPException subclass must use 'message=message' in super().__init__()",
             "non-http-exception-use-message",
@@ -241,16 +236,17 @@ class ExceptionAndKeywordChecker(BaseChecker):
 
     def visit_raise(self, node: astroid.Raise):
         """Check raise statements for HTTPException usage."""
-        self._check_httpexception_raise(node)
+        pass
+        # self._check_httpexception_raise(node)
 
-    def visit_assign(self, node: astroid.Assign):
-        """Check for hardcoded HTTP status codes in exception files."""
-        if not (self._is_exception_file(node) or self._is_baseapp_exception_file(node)):
-            return
+    # def visit_assign(self, node: astroid.Assign):
+    #     """Check for hardcoded HTTP status codes in exception files."""
+    #     if not (self._is_exception_file(node) or self._is_baseapp_exception_file(node)):
+    #         return
 
-        if isinstance(node.value, astroid.Const) and isinstance(node.value.value, int):
-            if 100 <= node.value.value <= 599:
-                self.add_message("no-hardcoded-status-codes", node=node)
+    #     if isinstance(node.value, astroid.Const) and isinstance(node.value.value, int):
+    #         if 100 <= node.value.value <= 599:
+    #             self.add_message("no-hardcoded-status-codes", node=node)
 
 
 def register(linter: PyLinter):

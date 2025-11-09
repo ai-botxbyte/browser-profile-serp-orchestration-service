@@ -87,8 +87,6 @@ class BaseAppConfig(BaseSettings):
         """Check if running in development environment."""
         return str(self.ENV).lower() in ["development", "dev"]
 
-#  [ ] lru cache and this function is not in orchestration service.
-#  [x] I found this "Using lru_cache on a config factory is common and appropriate for FastAPI/ 
 #  orchestration services: it returns a single cached BaseAppConfig per process, avoids re-parsing #  env files on each call, and is cheap and safe."
 @lru_cache
 def get_base_config() -> BaseAppConfig:

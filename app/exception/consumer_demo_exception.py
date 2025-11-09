@@ -1,5 +1,8 @@
-from fastapi import status
-from app.exception.baseapp_exception import BaseAppException
+from app.exception.baseapp_exception import (
+    BaseAppException,
+    HTTP_400_BAD_REQUEST,
+    HTTP_500_INTERNAL_SERVER_ERROR
+)
 
 
 class ConsumerDemoException(BaseAppException):
@@ -12,7 +15,7 @@ class ConsumerDemoValidationException(ConsumerDemoException):
     def __init__(self, queue_name: str, validation_error: str):
         super().__init__(
             f"Message validation failed for queue '{queue_name}': {validation_error}",
-            status_code=status.HTTP_400_BAD_REQUEST
+            status_code=HTTP_400_BAD_REQUEST
         )
 
 
@@ -22,7 +25,7 @@ class ConsumerDemoJobException(ConsumerDemoException):
     def __init__(self, queue_name: str, job_name: str, job_error: str):
         super().__init__(
             f"Job '{job_name}' failed for queue '{queue_name}': {job_error}",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 
@@ -32,5 +35,5 @@ class JobDemoServiceException(ConsumerDemoException):
     def __init__(self, job_name: str, service_name: str, service_error: str):
         super().__init__(
             f"Service '{service_name}' failed in job '{job_name}': {service_error}",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR
         )
