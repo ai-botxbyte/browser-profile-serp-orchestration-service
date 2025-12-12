@@ -9,10 +9,9 @@ classDiagram
         <<abstract>>
         +queue_name: str
         +config: Any
-        +connection: Connection
-        +channel: Channel
-        +queue: Queue
-        +consumer_tag: str
+        +connection: Optional[Connection]
+        +channel: Optional[Channel]
+        +queue: Optional[Queue]
         +__init__(queue_name, config)
         +connect()
         +disconnect()
@@ -23,67 +22,58 @@ classDiagram
         <<abstract>>
         +queue_name: str
         +consumer: BaseAppConsumer
-        +connection: Connection
-        +channel: Channel
         +__init__(queue_name, consumer)
         +connect()
         +disconnect()
         +start_consuming()
-        +process_message(message)
-        +_execute_jobs(message)*
-        +_send_job_status(trace_id, job_name, job_completed, error_message, job_status)
+        +process_message(message: AbstractIncomingMessage)
+        +_execute_jobs(message: dict)*
     }
 
     class BaseAppJob {
         <<abstract>>
         +job_name: str
-        +start_time: datetime
+        +start_time: Optional[datetime]
         +__init__()
-        +process_message(message)*
-        +execute(message)
+        +process_message(message: dict)*
+        +execute(message: dict)
     }
 
     %% Demo A Consumer
     class DemoAConsumer {
         +__init__()
         +start_consuming()
-        +process_message(message)
-        +validate_message(message_data)
     }
 
     %% Demo A Worker
     class DemoAWorker {
-        +job_handlers: Dict
+        +job_handlers: dict[str, BaseAppJob]
         +__init__()
-        +_execute_jobs(message)
+        +_execute_jobs(message: dict)
     }
 
     %% Demo A Jobs
     class DemoA1Job {
         +__init__()
-        +process_message(message)
-        -_validate_social_accounts(validation_data, trace_id)
-        -_process_social_validation(validation_data, trace_id)
+        +process_message(message: dict)
+        -_validate_social_accounts(validation_data: dict)
+        -_process_social_validation(validation_data: dict)
     }
 
     class DemoA2Job {
         +__init__()
-        +process_message(message)
-        -_analyze_content(tagging_data, trace_id)
-        -_generate_tags(analysis, trace_id)
-        -_apply_tags(tagging_data, tags, trace_id)
+        +process_message(message: dict)
+        -_analyze_content(tagging_data: dict)
+        -_generate_tags(analysis: dict)
+        -_apply_tags(tagging_data: dict, tags: list)
     }
 
     %% Supporting Classes
-    class DemoOrchestrationMessageSchema {
-        +trace_id: str
-        +job_type: str
-        +data: dict
-    }
-
     class DemoAOrchestrationService {
-        +db: Any
-        +validate_social_accounts(validation_data)
+        +db: AsyncSession
+        +validate_creation_data(data: dict)
+        +validate_social_accounts(data: dict)
+        -_validate_social_accounts(social_accounts: list)
     }
 
     class ConsumerDemoJobException {
@@ -105,19 +95,14 @@ classDiagram
     BaseAppJob <|-- DemoA2Job
 
     %% Composition Relationships
-    DemoAWorker *-- DemoAConsumer : uses for validation
+    DemoAWorker *-- DemoAConsumer : uses for connection
     DemoAWorker *-- DemoA1Job : manages
     DemoAWorker *-- DemoA2Job : manages
 
     %% Dependency Relationships
-    DemoAConsumer ..> DemoOrchestrationMessageSchema : validates
-    DemoAWorker ..> DemoOrchestrationMessageSchema : processes
-    DemoA1Job ..> DemoOrchestrationMessageSchema : consumes
-    DemoA2Job ..> DemoOrchestrationMessageSchema : consumes
-    DemoA1Job ..> DemoAOrchestrationService : uses
+    DemoAWorker ..> ConsumerDemoJobException : throws
     DemoA1Job ..> JobDemoServiceException : throws
     DemoA2Job ..> JobDemoServiceException : throws
-    DemoAWorker ..> ConsumerDemoJobException : throws
 ```
 
 ## Flow Diagram
@@ -128,43 +113,40 @@ flowchart TD
     Init --> CreateConsumer[Create DemoAConsumer]
     Init --> CreateJobs[Create Job Handlers<br/>- DemoA1Job job1<br/>- DemoA2Job job2]
     
-    CreateConsumer --> Connect[Connect to RabbitMQ]
-    Connect --> StartConsuming[Start Consuming from demo_A_queue]
+    CreateConsumer --> Connect[Connect to RabbitMQ<br/>via consumer.connect]
+    Connect --> DeclareQueue[Declare demo_A_queue<br/>and dead_letter queue]
+    DeclareQueue --> StartConsuming[Start Consuming from demo_A_queue]
     
-    StartConsuming --> ReceiveMsg[Receive Message]
-    ReceiveMsg --> ValidateMsg{DemoAConsumer<br/>validate_message}
+    StartConsuming --> ReceiveMsg[Receive Message from RabbitMQ]
+    ReceiveMsg --> WorkerProcess[DemoAWorker<br/>process_message]
     
-    ValidateMsg -->|Invalid| LogError[Log Validation Error]
-    ValidateMsg -->|Valid| WorkerProcess[DemoAWorker<br/>process_message]
+    WorkerProcess --> ParseJSON[Parse JSON message body]
+    ParseJSON --> CheckJobType{Check job_type<br/>from message}
     
-    WorkerProcess --> CheckJobType{Check job_type}
-    
-    CheckJobType -->|job1| ExecuteA1[Execute DemoA1Job]
-    CheckJobType -->|job2| ExecuteA2[Execute DemoA2Job]
+    CheckJobType -->|job1| ExecuteA1[Execute DemoA1Job.execute]
+    CheckJobType -->|job2| ExecuteA2[Execute DemoA2Job.execute]
     CheckJobType -->|Unknown| JobError[Throw ConsumerDemoJobException]
     
-    ExecuteA1 --> A1Step1[Step 1: _validate_social_accounts]
+    ExecuteA1 --> A1Process[DemoA1Job.process_message]
+    A1Process --> A1Step1[Step 1: _validate_social_accounts]
     A1Step1 --> A1Step2[Step 2: _process_social_validation]
     A1Step2 --> A1Complete[Job A1 Complete]
     
-    ExecuteA2 --> A2Step1[Step 1: _analyze_content]
+    ExecuteA2 --> A2Process[DemoA2Job.process_message]
+    A2Process --> A2Step1[Step 1: _analyze_content]
     A2Step1 --> A2Step2[Step 2: _generate_tags]
     A2Step2 --> A2Step3[Step 3: _apply_tags]
     A2Step3 --> A2Complete[Job A2 Complete]
     
-    A1Complete --> SendStatus[_send_job_status<br/>to data_orchestration_queue]
-    A2Complete --> SendStatus
-    JobError --> SendStatus
-    
-    SendStatus --> AckMsg[Acknowledge Message]
-    LogError --> AckMsg
+    A1Complete --> AckMsg[Acknowledge Message<br/>via message.process]
+    A2Complete --> AckMsg
+    JobError --> AckMsg
     
     AckMsg --> ReceiveMsg
     
-    style ValidateMsg fill:#e1f5ff
     style ExecuteA1 fill:#fff4e6
     style ExecuteA2 fill:#fff4e6
-    style SendStatus fill:#e8f5e9
+    style WorkerProcess fill:#e1f5ff
 ```
 
 ## Sequence Diagram
@@ -174,37 +156,43 @@ sequenceDiagram
     participant RMQ as RabbitMQ<br/>demo_A_queue
     participant Worker as DemoAWorker
     participant Consumer as DemoAConsumer
-    participant Schema as DemoOrchestrationMessageSchema
     participant Job as DemoA1Job/DemoA2Job
-    participant Service as DemoAOrchestrationService
-    participant DataQueue as data_orchestration_queue
 
-    RMQ->>Worker: Message Received
-    Worker->>Consumer: validate_message(message_data)
-    Consumer->>Schema: Validate using Pydantic
-    Schema-->>Consumer: Validated Message
-    Consumer-->>Worker: DemoOrchestrationMessageSchema
+    Note over Worker,Consumer: Initialization Phase
+    Worker->>Consumer: Create DemoAConsumer()
+    Consumer->>RMQ: connect() - Establish connection
+    Consumer->>RMQ: Declare queue and dead_letter queue
+    Worker->>Worker: Initialize job_handlers<br/>{'job1': DemoA1Job, 'job2': DemoA2Job}
     
-    Worker->>Worker: Get job_handler by job_type
+    Note over Worker,RMQ: Message Consumption Phase
+    RMQ->>Worker: Message Received (AbstractIncomingMessage)
+    Worker->>Worker: process_message(message)
+    Worker->>Worker: Parse JSON from message.body
+    Worker->>Worker: Extract job_type from message
     
     alt job_type = 'job1'
-        Worker->>Job: Execute DemoA1Job
-        Job->>Service: validate_social_accounts()
-        Service-->>Job: Validation Result
-        Job->>Job: _process_social_validation()
-        Job-->>Worker: Job Completed
+        Worker->>Job: Execute DemoA1Job.execute(message)
+        Job->>Job: process_message(message)
+        Job->>Job: _validate_social_accounts(data)
+        Job->>Job: _process_social_validation(data)
+        Job-->>Worker: Job Completed Successfully
     else job_type = 'job2'
-        Worker->>Job: Execute DemoA2Job
-        Job->>Job: _analyze_content()
-        Job->>Job: _generate_tags()
-        Job->>Job: _apply_tags()
-        Job-->>Worker: Job Completed
+        Worker->>Job: Execute DemoA2Job.execute(message)
+        Job->>Job: process_message(message)
+        Job->>Job: _analyze_content(data)
+        Job->>Job: _generate_tags(analysis)
+        Job->>Job: _apply_tags(data, tags)
+        Job-->>Worker: Job Completed Successfully
     else Unknown job_type
-        Worker->>Worker: Throw ConsumerDemoJobException
+        Worker->>Worker: Raise ConsumerDemoJobException
     end
     
-    Worker->>DataQueue: _send_job_status(trace_id, job_name, status)
-    Worker->>RMQ: Acknowledge Message
+    alt Success
+        Worker->>RMQ: Acknowledge Message (via message.process)
+    else Error
+        Worker->>RMQ: Reject Message (via exception in message.process)
+        Note over RMQ: Message sent to dead_letter queue
+    end
 ```
 
 ## Component Overview
@@ -213,62 +201,128 @@ sequenceDiagram
 
 #### BaseAppConsumer
 - Abstract base class for all consumers
-- Handles RabbitMQ connection management
-- Provides queue declaration and connection lifecycle
+- Handles RabbitMQ connection management using `aio_pika`
+- Provides queue declaration (main queue + dead letter queue)
+- Manages connection lifecycle (connect/disconnect)
+- Sets QoS with prefetch_count=1
+- Declares queues with priority support (x-max-priority: 10)
 
 #### BaseAppWorker
 - Abstract base class for all workers
-- Orchestrates consumer validation and job execution
-- Manages message processing workflow
+- Uses consumer for RabbitMQ connection management
+- Processes messages from queue
+- Parses JSON message bodies
+- Routes to job handlers via abstract `_execute_jobs()` method
+- Handles message acknowledgment via `async with message.process()`
 
 #### BaseAppJob
 - Abstract base class for all jobs
-- Provides execution framework with error handling
-- Tracks job execution metrics
+- Provides `execute()` wrapper method with error handling
+- Tracks job execution start time
+- Logs job execution lifecycle
+- Re-raises errors for dead letter queue handling
+- Requires subclasses to implement `process_message()` method
 
 ### 2. **Demo A Components**
 
 #### DemoAConsumer
-- **Purpose**: Validates messages from `demo_A_queue`
+- **Purpose**: Manages RabbitMQ connection and queue setup for `demo_A_queue`
 - **Functions**:
-  - `__init__()`: Initialize consumer with queue name
-  - `start_consuming()`: Start consuming messages
-  - `process_message(message)`: Process incoming messages
-  - `validate_message(message_data)`: Validate using schema
+  - `__init__()`: Initialize consumer with queue name "demo_A_queue" and config
+  - `start_consuming()`: Start consuming messages (keeps worker running)
+- **Note**: Consumer only handles connection management. Message processing is done by DemoAWorker.
 
 #### DemoAWorker
-- **Purpose**: Orchestrates message validation and job execution
+- **Purpose**: Orchestrates message processing and job execution
 - **Functions**:
-  - `__init__()`: Initialize with consumer and job handlers
-  - `_execute_jobs(message)`: Route to appropriate job based on job_type
+  - `__init__()`: Initialize with DemoAConsumer and job handlers dictionary
+  - `process_message(message)`: Parse JSON message and execute jobs
+  - `_execute_jobs(message)`: Route to appropriate job handler based on `job_type`
+- **Job Handlers**:
+  - `'job1'`: Routes to `DemoA1Job` instance
+  - `'job2'`: Routes to `DemoA2Job` instance
 
 #### DemoA1Job (Social Validation)
-- **Purpose**: Handle job_type='job1' - Social validation workflow
+- **Purpose**: Handle `job_type='job1'` - Social validation workflow
 - **Functions**:
+  - `execute(message)`: Wrapper method with error handling and metrics
   - `process_message(message)`: Main processing logic
-  - `_validate_social_accounts()`: Validate social accounts
-  - `_process_social_validation()`: Process validation results
+  - `_validate_social_accounts(validation_data)`: Validate social accounts (testing implementation)
+  - `_process_social_validation(validation_data)`: Process validation results (testing implementation)
+- **Error Handling**: Wraps errors in `JobDemoServiceException`
 
 #### DemoA2Job (Auto Tagging)
-- **Purpose**: Handle job_type='job2' - Auto tagging workflow
+- **Purpose**: Handle `job_type='job2'` - Auto tagging workflow
 - **Functions**:
+  - `execute(message)`: Wrapper method with error handling and metrics
   - `process_message(message)`: Main processing logic
-  - `_analyze_content()`: Analyze content for tags
-  - `_generate_tags()`: Generate tags from analysis
-  - `_apply_tags()`: Apply generated tags
+  - `_analyze_content(tagging_data)`: Analyze content for tags (testing implementation)
+  - `_generate_tags(analysis)`: Generate tags from analysis (testing implementation)
+  - `_apply_tags(tagging_data, tags)`: Apply generated tags (testing implementation)
+- **Error Handling**: Wraps errors in `JobDemoServiceException`
+
+#### DemoAOrchestrationService
+- **Purpose**: Service layer for Demo A orchestration operations
+- **Functions**:
+  - `validate_creation_data(data)`: Validates creation data including social accounts, user_id, workspace_id, name, description, age, progress
+  - `validate_social_accounts(data)`: Validates social accounts data structure
+  - `_validate_social_accounts(social_accounts)`: Private method for detailed social account validation (platform, username, url, followers, verified)
+- **Note**: Currently jobs use test implementations, but service is available for future integration
 
 ### 3. **Data Flow**
 
-1. **Message Reception**: Worker receives message from `demo_A_queue`
-2. **Validation**: DemoAConsumer validates message using DemoOrchestrationMessageSchema
-3. **Routing**: DemoAWorker routes to job handler based on `job_type`
-4. **Execution**: Selected job (DemoA1Job or DemoA2Job) executes
-5. **Status Reporting**: Worker sends job status to `data_orchestration_queue`
-6. **Acknowledgment**: Message is acknowledged in RabbitMQ
+1. **Initialization**: 
+   - `DemoAWorker` is created, which creates a `DemoAConsumer` instance
+   - Consumer connects to RabbitMQ and declares `demo_A_queue` and `demo_A_queue_dead_letter`
+   - Worker initializes job handlers: `{'job1': DemoA1Job(), 'job2': DemoA2Job()}`
+
+2. **Message Reception**: 
+   - Worker receives `AbstractIncomingMessage` from RabbitMQ queue
+   - Message is processed via `process_message()` method
+
+3. **Message Parsing**: 
+   - Worker parses JSON from `message.body.decode()`
+   - Extracts `job_type` from message dictionary
+
+4. **Job Routing**: 
+   - Worker looks up job handler in `job_handlers` dictionary using `job_type`
+   - If job_type not found, raises `ConsumerDemoJobException`
+
+5. **Job Execution**: 
+   - Worker calls `job_handler.execute(message)` 
+   - Job's `execute()` method calls `process_message()` with error handling
+   - Job performs its specific workflow steps
+
+6. **Message Acknowledgment**: 
+   - On success: Message is automatically acknowledged via `async with message.process()`
+   - On error: Exception is raised, message is rejected and sent to dead letter queue
 
 ### 4. **Error Handling**
 
-- **Validation Errors**: Caught by DemoAConsumer, message logged and skipped
-- **Job Errors**: Wrapped in `JobDemoServiceException` by individual jobs
-- **Worker Errors**: Wrapped in `ConsumerDemoJobException` by worker
-- **Final Status**: All errors reported to `data_orchestration_queue`
+- **JSON Decode Errors**: Caught in `process_message()`, logged and re-raised (message goes to dead letter queue)
+- **Job Execution Errors**: 
+  - Caught in job's `execute()` method
+  - Wrapped in `JobDemoServiceException` by individual jobs
+  - Re-raised to worker level
+- **Unknown Job Type**: Raises `ConsumerDemoJobException` in worker's `_execute_jobs()`
+- **All Errors**: Re-raised for debugging, causing message to be rejected and sent to `demo_A_queue_dead_letter`
+
+### 5. **Queue Configuration**
+
+- **Main Queue**: `demo_A_queue`
+  - Durable: `True`
+  - Auto-delete: `False`
+  - Priority support: `x-max-priority: 10`
+- **Dead Letter Queue**: `demo_A_queue_dead_letter`
+  - Durable: `True`
+  - Auto-delete: `False`
+  - Priority support: `x-max-priority: 10`
+- **QoS**: Prefetch count set to 1 (process one message at a time)
+
+### 6. **Running the Worker**
+
+The worker is run as a standalone service via `run_demo_A_worker.py`:
+- Creates `DemoAWorker` instance
+- Connects to RabbitMQ
+- Starts consuming messages
+- Runs indefinitely until interrupted
