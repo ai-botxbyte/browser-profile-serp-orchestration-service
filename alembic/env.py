@@ -9,7 +9,6 @@ from alembic import context
 
 from app.config.baseapp_config import get_base_config
 from app.model.baseapp_model import Base
-from app.model.data_orchestration_model import DataOrchestrationModel
 
 
 

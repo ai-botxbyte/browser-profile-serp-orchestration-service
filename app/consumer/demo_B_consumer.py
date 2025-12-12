@@ -46,9 +46,7 @@ class DemoBConsumer(BaseAppConsumer):
                 logger.debug(f"Consumer received message from queue: {self.queue_name}")
         
         # Start consuming and get consumer tag
-        self.consumer_tag = await self.queue.consume(consume_message)
         logger.info(f"Consumer started successfully for queue: {self.queue_name}")
-        logger.info(f"Consumer tag: {self.consumer_tag}")
         
         # Keep the consumer running indefinitely
         try:
