@@ -10,6 +10,9 @@ sys.path.insert(0, project_root)
 
 from loguru import logger
 from app.consumer.demo_A_consumer import DemoAConsumer
+from app.job.demo_a1_job import DemoA1Job
+from app.job.demo_a2_job import DemoA2Job
+from app.config.baseapp_config import get_base_config
 
 
 async def main():
@@ -21,10 +24,17 @@ async def main():
         format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
         level="INFO"
     )
-    
+     
     # Create consumer
-    consumer = DemoAConsumer()
-    
+    consumer = DemoAConsumer(
+        queue_name="demo_A_queue",
+        config=get_base_config(),
+        job_processor=[
+            DemoA1Job(),  # Social Validation job
+            DemoA2Job(),  # Auto Tagging job
+        ]
+    )
+        
     try:
         # Connect and start consuming
         await consumer.connect()

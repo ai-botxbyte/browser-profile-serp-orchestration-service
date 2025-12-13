@@ -10,7 +10,8 @@ sys.path.insert(0, project_root)
 
 from loguru import logger
 from app.consumer.demo_B_consumer import DemoBConsumer
-
+from app.job.demo_b1_job import DemoB1Job
+from app.config.baseapp_config import get_base_config
 
 async def main():
     """Main entry point for DemoBConsumer as standalone service"""
@@ -23,7 +24,11 @@ async def main():
     )
     
     # Create consumer
-    consumer = DemoBConsumer()
+    consumer = DemoBConsumer(
+        queue_name="demo_B_queue",
+        config=get_base_config(),
+        job_processor=DemoB1Job()  # Name Validation job
+    )
     
     try:
         # Connect and start consuming

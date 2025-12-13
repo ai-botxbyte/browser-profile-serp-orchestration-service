@@ -85,3 +85,14 @@ class InternalServerErrorException(BaseAppException):
 
     def __init__(self, message: str = "An unexpected error occurred."):
         super().__init__(message=message)
+
+
+class ConsumerJobException(BaseAppException):
+    """Exception for job execution errors in consumer"""
+    
+    def __init__(self, queue_name: str, job_name: str, job_error: str):
+        self.queue_name = queue_name
+        self.job_name = job_name
+        self.job_error = job_error
+        message = f"Job '{job_name}' failed for queue '{queue_name}': {job_error}"
+        super().__init__(message=message)

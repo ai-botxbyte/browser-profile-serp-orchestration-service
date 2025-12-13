@@ -59,11 +59,13 @@ async def publish_test_messages():
         # ========== Demo A Queue Messages ==========
         logger.info("=" * 60)
         logger.info("Publishing messages to demo_A_queue...")
+        logger.info("Note: Each message will automatically trigger both jobs:")
+        logger.info("  - DemoA1Job (Social Validation)")
+        logger.info("  - DemoA2Job (Auto Tagging)")
         logger.info("")
         
-        # Demo A - Job 1 (Social Validation)
-        demo_a_job1_message = {
-            "job_type": "job1",
+        # Demo A - Message 1 (will trigger both jobs)
+        demo_a_message1 = {
             "data": {
                 "name": "Test Userxx",
                 "user_id": str(uuid4()),
@@ -82,19 +84,18 @@ async def publish_test_messages():
         
         await channel.default_exchange.publish(
             aio_pika.Message(
-                json.dumps(demo_a_job1_message).encode(),
+                json.dumps(demo_a_message1).encode(),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 priority=5
             ),
             routing_key="demo_A_queue"
         )
-        logger.info(f"✓ Published Demo A - Job1 (Social Validation)")
-        logger.info(f"   Job Type: job1")
+        logger.info(f"✓ Published Demo A - Message 1")
+        logger.info(f"   Will execute: DemoA1Job → DemoA2Job")
         logger.info("")
         
-        # Demo A - Job 2 (Auto Tagging)
-        demo_a_job2_message = {
-            "job_type": "job2",
+        # Demo A - Message 2 (will trigger both jobs)
+        demo_a_message2 = {
             "data": {
                 "name": "Test Content",
                 "description": "This is a test content for auto tagging",
@@ -105,24 +106,24 @@ async def publish_test_messages():
         
         await channel.default_exchange.publish(
             aio_pika.Message(
-                json.dumps(demo_a_job2_message).encode(),
+                json.dumps(demo_a_message2).encode(),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 priority=5
             ),
             routing_key="demo_A_queue"
         )
-        logger.info(f"✓ Published Demo A - Job2 (Auto Tagging)")
-        logger.info(f"   Job Type: job2")
+        logger.info(f"✓ Published Demo A - Message 2")
+        logger.info(f"   Will execute: DemoA1Job → DemoA2Job")
         logger.info("")
         
         # ========== Demo B Queue Messages ==========
         logger.info("=" * 60)
         logger.info("Publishing messages to demo_B_queue...")
+        logger.info("Note: Each message will automatically trigger DemoB1Job (Name Validation)")
         logger.info("")
         
-        # Demo B - Job 1 (Name Validation)
-        demo_b_job1_message = {
-            "job_type": "job1",
+        # Demo B - Message 1 (will trigger DemoB1Job)
+        demo_b_message1 = {
             "data": {
                 "name": "John Doe"
             }
@@ -130,14 +131,14 @@ async def publish_test_messages():
         
         await channel.default_exchange.publish(
             aio_pika.Message(
-                json.dumps(demo_b_job1_message).encode(),
+                json.dumps(demo_b_message1).encode(),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 priority=5
             ),
             routing_key="demo_B_queue"
         )
-        logger.info(f"✓ Published Demo B - Job1 (Name Validation)")
-        logger.info(f"   Job Type: job1")
+        logger.info(f"✓ Published Demo B - Message 1")
+        logger.info(f"   Will execute: DemoB1Job")
         logger.info("")
         
         # Close connection
@@ -151,7 +152,10 @@ async def publish_test_messages():
         logger.info("   - python app/worker/run_demo_A_worker.py")
         logger.info("   - python app/worker/run_demo_B_worker.py")
         logger.info("2. Check the worker logs to see job execution")
-        logger.info("3. You should see 'DemoA1Job successful', 'DemoA2Job successful',")
+        logger.info("3. Expected behavior:")
+        logger.info("   - Demo A messages: Will execute DemoA1Job → DemoA2Job (both jobs)")
+        logger.info("   - Demo B messages: Will execute DemoB1Job (single job)")
+        logger.info("4. You should see 'DemoA1Job successful', 'DemoA2Job successful',")
         logger.info("   and 'DemoB1Job successful' printed in the worker outputs")
         logger.info("=" * 60)
         
