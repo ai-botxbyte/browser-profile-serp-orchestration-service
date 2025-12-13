@@ -16,10 +16,6 @@ class DemoA1Job(BaseAppJob):
 
     
     async def execute(self, message: dict) -> None:
-        """Execute the job."""
-        await self.process_message(message=message)
-        
-    async def process_message(self, message: dict) -> None:
         """Process social validation message."""
 
         validation_data = message.get("data")

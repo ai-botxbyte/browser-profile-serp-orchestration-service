@@ -34,11 +34,7 @@ class BaseAppConsumer(ABC):
             self.channel = await self.connection.channel()
             await self.channel.set_qos(prefetch_count=1)
             
-            # [ ] We never ever declare queue while consuming - it's producing time works.
-            # Declare main queue with priority support
-            # [x] Idempotently declare the main queue. This is a best practice for consumers
-            # to ensure the queue exists with the correct properties before they start listening.
-            # If the queue already exists, this command does nothing.
+
             self.queue = await self.channel.declare_queue(
                 self.queue_name,
                 durable=True,
@@ -48,11 +44,6 @@ class BaseAppConsumer(ABC):
                 }
             )
 
-            # [ ] We never ever declare queue while consuming - it's producing time works.
-            # Declare dead letter queue for permanent storage (no consumer needed)
-
-            # [x] Idempotently declare the associated dead-letter queue. The consumer is responsible
-            # for this as it controls the logic for dead-lettering failed messages.
             await self.channel.declare_queue(
                 f"{self.queue_name}_dead_letter",
                 durable=True,

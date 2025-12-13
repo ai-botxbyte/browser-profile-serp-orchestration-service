@@ -14,12 +14,8 @@ class DemoB1Job(BaseAppJob):
         super().__init__()
         logger.info(f"{self.__class__.__name__} initialized")
 
-    
-    async def execute(self, message: dict) -> None:
-        """Execute the job."""
-        await self.process_message(message=message)
         
-    async def process_message(self, message: dict) -> None:
+    async def execute(self, message: dict) -> None:
         """Process name validation message."""
         validation_data = message.get("data")
         

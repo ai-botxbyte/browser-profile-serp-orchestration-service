@@ -17,7 +17,7 @@ class BaseAppJob(ABC):
         logger.info(f"{self.job_name} initialized")
     
     @abstractmethod
-    async def process_message(self,  message: Any) -> None:
+    async def execute(self,  message: Any) -> None:
         """
         Process a single message - Must be implemented by subclasses
         """
