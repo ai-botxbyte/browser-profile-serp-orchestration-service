@@ -1,75 +1,52 @@
-"""Demo B Worker - Orchestrates consumer validation and job execution"""
+"""Run Demo B Consumer as standalone service"""
 
-from __future__ import annotations
+import asyncio
+import sys
+import os
+
+# Add project root to Python path BEFORE importing app modules
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
 
 from loguru import logger
-
-from app.worker.baseapp_worker import BaseAppWorker
 from app.consumer.demo_B_consumer import DemoBConsumer
-from app.job.demo_b1_job import DemoB1Job
-from app.exception.consumer_demo_exception import ConsumerDemoJobException
 
 
-class DemoBWorker(BaseAppWorker):
-    """
-    Demo B Worker that orchestrates consumer validation and job execution.
+async def main():
+    """Main entry point for DemoBConsumer as standalone service"""
+    # Configure loguru for production
+    logger.remove()
+    logger.add(
+        sys.stdout,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
+        level="INFO"
+    )
     
-    Flow:
-    1. Consumes messages from demo_B_queue
-    2. Uses DemoBConsumer to validate messages
-    3. Initializes and executes related jobs based on job_type
-    """
+    # Create consumer
+    consumer = DemoBConsumer()
     
-    def __init__(self):
-        """Initialize Demo B Worker with consumer and job handlers"""
-        # Create consumer for validation only
-        consumer = DemoBConsumer()
-        
-        super().__init__(
-            queue_name="demo_B_queue",
-            consumer=consumer
-        )
-        
-        # Initialize job handlers
-        self.job_handlers: dict[str, any] = {
-            'job1': DemoB1Job(),  # Name Validation job
-        }
-        
-        logger.info(
-            f"{self.__class__.__name__} initialized with {len(self.job_handlers)} job handlers: "
-            f"{list(self.job_handlers.keys())}"
-        )
-    
-    async def _execute_jobs(self, message: dict) -> None:
-        """
-        Execute all related jobs for the message.
-        
-        Args:
-            message: Message data dictionary
-            
-        Raises:
-            ConsumerDemoJobException: If any job fails (for debugging)
-        """
-        job_type = message.get("job_type")
-        
-        logger.info(f"Worker: Starting job execution for job_type: {job_type}")
-        
-        # Get appropriate job handler
-        job_handler = self.job_handlers.get(job_type)
-        
-        if job_handler is None:
-            error_msg = f"No job handler found for job_type: {job_type}"
-            logger.error(error_msg)
-            raise ConsumerDemoJobException(
-                queue_name=self.queue_name,
-                job_name="Unknown",
-                job_error=error_msg
-            )
-        
-        job_name = job_handler.__class__.__name__
-        logger.info(f"Worker: Routing to {job_name}")
-        
-        # Execute job
-        await job_handler.execute(message=message)
-        logger.info(f"Worker: Job {job_name} completed successfully")
+    try:
+        # Connect and start consuming
+        await consumer.connect()
+        await consumer.start_consuming()
+                
+    except (ConnectionError, RuntimeError, asyncio.TimeoutError) as e:
+        logger.error(f"Demo B consumer service error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logger.info("Demo B Consumer interrupted by user")
+    finally:
+        await consumer.disconnect()
+        logger.info("Demo B Consumer service shutdown complete")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Demo B Consumer interrupted by user")
+        sys.exit(0)
+    except (SystemExit, RuntimeError) as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
 

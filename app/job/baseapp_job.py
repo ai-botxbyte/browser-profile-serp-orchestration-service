@@ -23,23 +23,3 @@ class BaseAppJob(ABC):
         """
 
     
-    
-    async def execute(self,  message: Any) -> None:
-        """
-        Main execution method with error handling and metrics
-        """
-        self.start_time = datetime.utcnow()
-        
-        try:
-            logger.info(f"Starting {self.job_name} processing")
-            await self.process_message(message=message)
-            logger.info(f"Successfully completed {self.job_name} processing")
-            
-        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
-            logger.error(f"Job {self.job_name} failed: {e}")
-            logger.error(f"Failed message: {message}")
-            # Re-raise to let consumer handle dead letter queue
-            raise e
-            
-        finally:
-            self.start_time = None

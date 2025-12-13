@@ -65,7 +65,7 @@ async def publish_test_messages():
         demo_a_job1_message = {
             "job_type": "job1",
             "data": {
-                "name": "Test User",
+                "name": "Test Userxx",
                 "user_id": str(uuid4()),
                 "workspace_id": str(uuid4()),
                 "social_accounts": [
