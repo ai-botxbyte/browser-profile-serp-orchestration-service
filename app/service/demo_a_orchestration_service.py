@@ -106,12 +106,16 @@ class DemoAOrchestrationService(BaseAppService):
             if "platform" in account:
                 platform = account.get("platform", "")
                 if not platform or len(platform) < 1 or len(platform) > 50:
-                    errors.append(f"Social account {idx}: platform must be between 1 and 50 characters")
+                    errors.append(
+                        f"Social account {idx}: platform must be between 1 and 50 characters"
+                        )
             
             if "username" in account:
                 username = account.get("username", "")
                 if not username or len(username) < 1 or len(username) > 50:
-                    errors.append(f"Social account {idx}: username must be between 1 and 50 characters")
+                    errors.append(
+                        f"Social account {idx}: username must be between 1 and 50 characters"
+                        )
             
             if "url" in account:
                 url = account.get("url", "")

@@ -21,5 +21,3 @@ class BaseAppJob(ABC):
         """
         Process a single message - Must be implemented by subclasses
         """
-
-    

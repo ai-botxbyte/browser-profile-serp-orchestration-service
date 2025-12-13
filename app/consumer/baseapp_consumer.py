@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Optional, Callable, Any, Union
+from abc import ABC
+from typing import Optional, Any, Union
 
-import aio_pika
 import json
 import asyncio
+import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 from loguru import logger
 
@@ -15,7 +15,12 @@ from app.job.baseapp_job import BaseAppJob
 class BaseAppConsumer(ABC):
     """Base consumer class that can be reused by all consumers following baseapp patterns"""
     
-    def __init__(self, queue_name: str, config: Any, job_processor: Optional[Union[list[BaseAppJob], BaseAppJob]] = None):
+    def __init__(
+        self,
+        queue_name: str, 
+        config: Any, 
+        job_processor: Optional[Union[list[BaseAppJob], BaseAppJob]] = None
+        ):
         """
         Initialize the base consumer.
         

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 from typing import Dict, Any
-from loguru import logger
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,4 +42,3 @@ class DemoBOrchestrationService(BaseAppService):
             "valid": len(errors) == 0,
             "errors": errors
         }
-
