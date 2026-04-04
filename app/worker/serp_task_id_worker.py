@@ -1,4 +1,4 @@
-"""Run SERP Task ID Worker as standalone service - polls results and stores in Redis"""
+"""Run SERP Task ID Worker as standalone service - polls results and sends to response queue"""
 
 import asyncio
 import sys

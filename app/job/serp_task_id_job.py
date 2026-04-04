@@ -1,4 +1,4 @@
-"""SERP Task ID Job - Polls task result and stores in Redis"""
+"""SERP Task ID Job - Polls task result and sends to response queue"""
 
 from __future__ import annotations
 
@@ -11,27 +11,28 @@ from loguru import logger
 
 from app.job.baseapp_job import BaseAppJob
 from app.config.config import get_config
-from app.helper.redis_helper import RedisHelper
+from app.helper.rabbitmq_helper import RabbitMQHelper
 
 
 class SerpTaskIdJob(BaseAppJob):
-    """Job to poll task result and store in Redis"""
+    """Job to poll task result and send to serp_response_queue"""
+
+    RESPONSE_QUEUE = "serp_response_queue"
 
     def __init__(self):
         super().__init__()
         self.config = get_config()
-        self.redis_helper: Optional[RedisHelper] = None
+        self.rabbitmq_helper: Optional[RabbitMQHelper] = None
 
-    async def _ensure_redis(self) -> RedisHelper:
-        """Ensure Redis connection is established"""
-        if self.redis_helper is None:
-            self.redis_helper = RedisHelper()
-            await self.redis_helper.initialize()
-        return self.redis_helper
+    async def _ensure_rabbitmq(self) -> RabbitMQHelper:
+        """Ensure RabbitMQ connection is established"""
+        if self.rabbitmq_helper is None:
+            self.rabbitmq_helper = RabbitMQHelper()
+        return self.rabbitmq_helper
 
     async def execute(self, message: Any) -> None:
         """
-        Poll task result and store in Redis.
+        Poll task result and send to serp_response_queue.
 
         Args:
             message: Message with format:
@@ -56,8 +57,8 @@ class SerpTaskIdJob(BaseAppJob):
         if result_data is None:
             raise RuntimeError(f"Failed to get SERP results for task_id: {task_id}")
 
-        # Store result in Redis with 3-hour TTL
-        await self._store_result(query_id, task_id, search_type, result_data)
+        # Send result to serp_response_queue
+        await self._send_to_response_queue(query_id, task_id, search_type, result_data)
 
         logger.info(f"SERP task ID job completed: query_id={query_id}, task_id={task_id}")
 
@@ -121,18 +122,15 @@ class SerpTaskIdJob(BaseAppJob):
         logger.error(f"Task {task_id} timed out after {max_attempts} attempts")
         return None
 
-    async def _store_result(
+    async def _send_to_response_queue(
         self,
         query_id: str,
         task_id: str,
         search_type: str,
         result_data: dict
     ) -> None:
-        """Store SERP result in Redis with TTL"""
-        redis = await self._ensure_redis()
-
-        cache_key = f"serp:result:{query_id}"
-        ttl = self.config.SERP_REDIS_TTL  # 3 hours
+        """Send SERP result to serp_response_queue"""
+        rabbitmq = await self._ensure_rabbitmq()
 
         # Extract output_data which contains the SERP results
         output_data = result_data.get("output_data", {})
@@ -147,8 +145,8 @@ class SerpTaskIdJob(BaseAppJob):
                 except json.JSONDecodeError:
                     serp_result = serp_result_str
 
-        # Store structured data
-        store_data = {
+        # Prepare message data
+        message_data = {
             "query_id": query_id,
             "task_id": task_id,
             "search_type": search_type,
@@ -159,16 +157,21 @@ class SerpTaskIdJob(BaseAppJob):
             "variables": output_data.get("variables", {}) if output_data else {}
         }
 
-        success = await redis.set(cache_key, store_data, ttl=ttl)
+        # Publish to serp_response_queue
+        success = await rabbitmq.publish_message(
+            queue_name=self.RESPONSE_QUEUE,
+            message=message_data,
+            priority=5
+        )
 
         if success:
-            logger.info(f"SERP result stored in Redis: {cache_key} (TTL: {ttl}s)")
+            logger.info(f"SERP result sent to {self.RESPONSE_QUEUE}: query_id={query_id}")
         else:
-            logger.error(f"Failed to store SERP result in Redis: {cache_key}")
-            raise RuntimeError(f"Failed to store result in Redis for query_id: {query_id}")
+            logger.error(f"Failed to send SERP result to {self.RESPONSE_QUEUE}: query_id={query_id}")
+            raise RuntimeError(f"Failed to send result to queue for query_id: {query_id}")
 
     async def cleanup(self) -> None:
         """Cleanup resources"""
-        if self.redis_helper:
-            await self.redis_helper.close()
-            self.redis_helper = None
+        if self.rabbitmq_helper:
+            await self.rabbitmq_helper.close()
+            self.rabbitmq_helper = None

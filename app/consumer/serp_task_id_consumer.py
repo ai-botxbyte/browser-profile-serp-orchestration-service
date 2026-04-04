@@ -1,4 +1,4 @@
-"""SERP Task ID Consumer - Polls task results and stores in Redis"""
+"""SERP Task ID Consumer - Polls task results and sends to response queue"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ class SerpTaskIdConsumer:
 
     QUEUE_NAME = "serp_task_id_queue"
     DLX_QUEUE_NAME = "serp_task_id_dlx_queue"
+    RESPONSE_QUEUE_NAME = "serp_response_queue"
 
     def __init__(
         self,
@@ -58,6 +59,14 @@ class SerpTaskIdConsumer:
             # DLX queue
             await self.channel.declare_queue(
                 self.dlx_queue_name,
+                durable=True,
+                auto_delete=False,
+                arguments=queue_args
+            )
+
+            # Response queue for sending SERP results
+            await self.channel.declare_queue(
+                self.RESPONSE_QUEUE_NAME,
                 durable=True,
                 auto_delete=False,
                 arguments=queue_args
