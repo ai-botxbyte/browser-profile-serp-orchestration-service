@@ -18,6 +18,7 @@ class SerpTaskIdJob(BaseAppJob):
     """Job to poll task result and send to serp_response_queue"""
 
     RESPONSE_QUEUE = "serp_response_queue"
+    REQ_QUEUE = "serp_req_queue"  # For retrying failed tasks
 
     def __init__(self):
         super().__init__()
@@ -57,7 +58,15 @@ class SerpTaskIdJob(BaseAppJob):
         if result_data is None:
             raise RuntimeError(f"Failed to get SERP results for task_id: {task_id}")
 
-        # Send result to serp_response_queue
+        # Check if task failed due to AI-management issues (e.g., wait_for timeout)
+        task_status = result_data.get("task_status", "").lower()
+        if task_status in ["failed", "error"]:
+            # Requeue to serp_req_queue for retry
+            await self._requeue_to_req_queue(query_id, search_type, result_data)
+            logger.info(f"Failed task requeued to serp_req_queue: query_id={query_id}")
+            return
+
+        # Send successful result to serp_response_queue
         await self._send_to_response_queue(query_id, task_id, search_type, result_data)
 
         logger.info(f"SERP task ID job completed: query_id={query_id}, task_id={task_id}")
@@ -98,8 +107,9 @@ class SerpTaskIdJob(BaseAppJob):
                                 return result_data
 
                             if status in ["failed", "error"]:
-                                logger.error(f"Task {task_id} failed: {data}")
-                                return None
+                                logger.warning(f"Task {task_id} failed: {result_data.get('output_data', {}).get('error', 'Unknown error')}")
+                                # Return failed result - it's a terminal state, no retry needed
+                                return result_data
 
                             logger.debug(
                                 f"Task {task_id} status: {status}, "
@@ -109,6 +119,9 @@ class SerpTaskIdJob(BaseAppJob):
                             status = data.get("task_status", data.get("status", "")).lower()
                             if status in ["completed", "complete", "success", "done"]:
                                 logger.info(f"Task {task_id} completed on attempt {attempt + 1}")
+                                return data
+                            if status in ["failed", "error"]:
+                                logger.warning(f"Task {task_id} failed")
                                 return data
 
                     elif response.status_code == 404:
@@ -122,6 +135,43 @@ class SerpTaskIdJob(BaseAppJob):
         logger.error(f"Task {task_id} timed out after {max_attempts} attempts")
         return None
 
+    async def _requeue_to_req_queue(
+        self,
+        query_id: str,
+        search_type: str,
+        result_data: dict
+    ) -> None:
+        """Requeue failed task to serp_req_queue for retry"""
+        rabbitmq = await self._ensure_rabbitmq()
+
+        # Extract query from result_data
+        output_data = result_data.get("output_data", {})
+        variables = output_data.get("variables", {})
+        query = variables.get("query") or variables.get("queries")
+
+        if not query:
+            logger.error(f"Cannot requeue: no query found in result_data for query_id={query_id}")
+            return
+
+        # Prepare message for serp_req_queue
+        message_data = {
+            "query": query,
+            "query_id": query_id,
+            "search_type": search_type
+        }
+
+        success = await rabbitmq.publish_message(
+            queue_name=self.REQ_QUEUE,
+            message=message_data,
+            priority=5
+        )
+
+        if success:
+            logger.info(f"Failed task requeued to {self.REQ_QUEUE}: query_id={query_id}, query={query}")
+        else:
+            logger.error(f"Failed to requeue to {self.REQ_QUEUE}: query_id={query_id}")
+            raise RuntimeError(f"Failed to requeue to {self.REQ_QUEUE} for query_id: {query_id}")
+
     async def _send_to_response_queue(
         self,
         query_id: str,
@@ -134,16 +184,30 @@ class SerpTaskIdJob(BaseAppJob):
 
         # Extract output_data which contains the SERP results
         output_data = result_data.get("output_data", {})
+        task_status = result_data.get("task_status", "").lower()
 
         # Parse serp_result JSON string if present
         serp_result = None
-        if output_data and output_data.get("variables"):
-            serp_result_str = output_data["variables"].get("serp_result")
-            if serp_result_str:
-                try:
-                    serp_result = json.loads(serp_result_str)
-                except json.JSONDecodeError:
-                    serp_result = serp_result_str
+        error_message = None
+        variables = {}
+
+        if output_data:
+            # Check for error in output_data
+            error_message = output_data.get("error")
+
+            if output_data.get("variables"):
+                # Copy variables and remove serp_result to avoid duplication
+                variables = {
+                    k: v for k, v in output_data["variables"].items()
+                    if k != "serp_result"
+                }
+
+                serp_result_str = output_data["variables"].get("serp_result")
+                if serp_result_str:
+                    try:
+                        serp_result = json.loads(serp_result_str)
+                    except json.JSONDecodeError:
+                        serp_result = serp_result_str
 
         # Prepare message data
         message_data = {
@@ -151,10 +215,12 @@ class SerpTaskIdJob(BaseAppJob):
             "task_id": task_id,
             "search_type": search_type,
             "task_status": result_data.get("task_status"),
+            "success": task_status in ["completed", "complete", "success", "done"],
             "started_at": result_data.get("started_at"),
             "completed_at": result_data.get("completed_at"),
             "serp_result": serp_result,
-            "variables": output_data.get("variables", {}) if output_data else {}
+            "error": error_message,
+            "variables": variables
         }
 
         # Publish to serp_response_queue

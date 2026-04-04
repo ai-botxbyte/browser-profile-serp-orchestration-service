@@ -20,6 +20,7 @@ class SerpTaskIdConsumer:
     QUEUE_NAME = "serp_task_id_queue"
     DLX_QUEUE_NAME = "serp_task_id_dlx_queue"
     RESPONSE_QUEUE_NAME = "serp_response_queue"
+    CONCURRENCY_LIMIT = 10  # Process up to 10 messages concurrently
 
     def __init__(
         self,
@@ -33,6 +34,7 @@ class SerpTaskIdConsumer:
         self.channel: Optional[aio_pika.Channel] = None
         self.queue: Optional[aio_pika.Queue] = None
         self.job_processor = job_processor
+        self._active_tasks: set[asyncio.Task] = set()
         logger.info(f"SerpTaskIdConsumer initialized for queue: {self.queue_name}")
 
     async def connect(self) -> None:
@@ -44,7 +46,7 @@ class SerpTaskIdConsumer:
                 blocked_connection_timeout=300,
             )
             self.channel = await self.connection.channel()
-            await self.channel.set_qos(prefetch_count=1)
+            await self.channel.set_qos(prefetch_count=self.CONCURRENCY_LIMIT)
 
             queue_args = {"x-max-priority": 10}
 
@@ -80,32 +82,46 @@ class SerpTaskIdConsumer:
 
     async def disconnect(self) -> None:
         """Close RabbitMQ connection"""
+        # Wait for active tasks to complete
+        if self._active_tasks:
+            logger.info(f"Waiting for {len(self._active_tasks)} active tasks to complete...")
+            await asyncio.gather(*self._active_tasks, return_exceptions=True)
         if self.connection and not self.connection.is_closed:
             await self.connection.close()
             logger.info("Disconnected from RabbitMQ")
 
     async def _consume_message(self, message: AbstractIncomingMessage) -> None:
-        """Handle incoming message"""
-        async with message.process(requeue=False):
+        """Handle incoming message - spawn async task for processing"""
+        task = asyncio.create_task(self._process_message_async(message))
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
+
+    async def _process_message_async(self, message: AbstractIncomingMessage) -> None:
+        """Process message asynchronously"""
+        try:
+            message_data = json.loads(message.body.decode())
+            logger.debug(f"Task ID Consumer received message: {message_data}")
+
             try:
-                message_data = json.loads(message.body.decode())
-                logger.debug(f"Task ID Consumer received message: {message_data}")
+                await self._execute_jobs(message_data)
+                await message.ack()
+                logger.info("Task ID Consumer completed processing message successfully")
 
-                try:
-                    await self._execute_jobs(message_data)
-                    logger.info("Task ID Consumer completed processing message successfully")
+            except ConsumerJobException as job_error:
+                logger.error(f"Task ID Consumer: Job execution failed: {job_error}")
+                await self._send_to_dlx(message_data, str(job_error))
+                await message.ack()
+            except Exception as job_error:
+                logger.error(f"Task ID Consumer: Unexpected error: {job_error}")
+                await self._send_to_dlx(message_data, str(job_error))
+                await message.ack()
 
-                except ConsumerJobException as job_error:
-                    logger.error(f"Task ID Consumer: Job execution failed: {job_error}")
-                    await self._send_to_dlx(message_data, str(job_error))
-                except Exception as job_error:
-                    logger.error(f"Task ID Consumer: Unexpected error: {job_error}")
-                    await self._send_to_dlx(message_data, str(job_error))
-
-            except json.JSONDecodeError as e:
-                logger.error(f"Task ID Consumer JSON decode error: {e}")
-            except Exception as e:
-                logger.error(f"Task ID Consumer processing error: {e}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Task ID Consumer JSON decode error: {e}")
+            await message.ack()
+        except Exception as e:
+            logger.error(f"Task ID Consumer processing error: {e}")
+            await message.nack(requeue=False)
 
     async def _send_to_dlx(self, message_data: dict, error: str) -> None:
         """Send failed message to DLX queue (infinite retry)"""
@@ -132,8 +148,11 @@ class SerpTaskIdConsumer:
         if not self.queue:
             raise RuntimeError("Queue not initialized. Call connect() first.")
 
-        logger.info(f"Starting to consume messages from: {self.queue_name}")
-        await self.queue.consume(self._consume_message)
+        logger.info(
+            f"Starting to consume messages from: {self.queue_name} "
+            f"(concurrency: {self.CONCURRENCY_LIMIT})"
+        )
+        await self.queue.consume(self._consume_message, no_ack=False)
 
         try:
             await asyncio.Future()
