@@ -1,4 +1,4 @@
-"""SERP Request Consumer - Creates tasks and sends to task_id queue"""
+"""SERP Request Consumer - Processes SERP requests with browser selection and dispatch"""
 
 from __future__ import annotations
 
@@ -15,12 +15,10 @@ from app.job.baseapp_job import BaseAppJob
 
 
 class SerpReqConsumer:
-    """Consumer for SERP request queue"""
+    """Consumer for SERP request queue - Fire & Forget pattern"""
 
     QUEUE_NAME = "serp_req_queue"
     DLX_QUEUE_NAME = "serp_req_dlx_queue"
-    TASK_ID_QUEUE_NAME = "serp_task_id_queue"
-    TASK_ID_DLX_QUEUE_NAME = "serp_task_id_dlx_queue"
     CONCURRENCY_LIMIT = 10  # Process up to 10 messages concurrently
 
     def __init__(
@@ -39,7 +37,7 @@ class SerpReqConsumer:
         logger.info(f"SerpReqConsumer initialized for queue: {self.queue_name}")
 
     async def connect(self) -> None:
-        """Establish connection to RabbitMQ and declare all SERP queues"""
+        """Establish connection to RabbitMQ and declare SERP queues"""
         try:
             self.connection = await aio_pika.connect_robust(
                 self.config.RABBITMQ_URL,
@@ -49,7 +47,6 @@ class SerpReqConsumer:
             self.channel = await self.connection.channel()
             await self.channel.set_qos(prefetch_count=self.CONCURRENCY_LIMIT)
 
-            # Declare all 4 SERP queues
             queue_args = {"x-max-priority": 10}
 
             # 1. serp_req_queue (main)
@@ -68,29 +65,7 @@ class SerpReqConsumer:
                 arguments=queue_args
             )
 
-            # 3. serp_task_id_queue
-            await self.channel.declare_queue(
-                self.TASK_ID_QUEUE_NAME,
-                durable=True,
-                auto_delete=False,
-                arguments=queue_args
-            )
-
-            # 4. serp_task_id_dlx_queue
-            await self.channel.declare_queue(
-                self.TASK_ID_DLX_QUEUE_NAME,
-                durable=True,
-                auto_delete=False,
-                arguments=queue_args
-            )
-
-            # Pass channel to job processors
-            jobs = self.job_processor if isinstance(self.job_processor, list) else [self.job_processor]
-            for job in jobs:
-                if hasattr(job, 'set_channel'):
-                    job.set_channel(self.channel)
-
-            logger.info(f"Connected to RabbitMQ. All SERP queues declared.")
+            logger.info(f"Connected to RabbitMQ. SERP queues declared.")
 
         except Exception as e:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
@@ -116,12 +91,13 @@ class SerpReqConsumer:
         """Process message asynchronously"""
         try:
             message_data = json.loads(message.body.decode())
-            logger.debug(f"SERP Consumer received message: {message_data}")
+            task_id = message_data.get("task_id", "unknown")
+            logger.debug(f"SERP Consumer received message: task_id={task_id}")
 
             try:
                 await self._execute_jobs(message_data)
                 await message.ack()
-                logger.info("SERP Consumer completed processing message successfully")
+                logger.info(f"SERP Consumer completed processing: task_id={task_id}")
 
             except ConsumerJobException as job_error:
                 logger.error(f"SERP Consumer: Job execution failed: {job_error}")
